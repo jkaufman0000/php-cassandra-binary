@@ -340,7 +340,6 @@ class DataStream {
 	
 	
 	/**
-	 * TODO: ausdiskitieren
 	 * @param array $type
 	 * @return string|number|NULL|boolean
 	 */
