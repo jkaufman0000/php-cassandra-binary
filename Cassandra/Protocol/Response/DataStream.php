@@ -147,10 +147,6 @@ class DataStream {
 		$list = array();
 		$count = $this->readShort();
 		
-		echo "readList(0x".dechex($valueType['type']).") elements=$count\n";
-		
-		file_put_contents("/tmp/x",$this->data);
-		
 		for ($i = 0; $i < $count; ++$i) {
 		  $list[] = $this->readCollectionElementByType($valueType);
 		}
