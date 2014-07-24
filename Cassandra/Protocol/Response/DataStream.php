@@ -64,10 +64,16 @@ class DataStream {
 	 *
 	 * @return int
 	 */
-	public function readInt() {
-		return unpack('N', $this->read(4))[1];
+	public function readInt($len = 4) {
+	  $val = unpack('N', $this->read($len));
+		return $val[1];
 	}
 
+	public function readIntElement() {
+	  $len = $this->readShort();
+	  return $this->readint($len);
+	}
+	
 	/**
 	 * Read string.
 	 *
@@ -75,7 +81,7 @@ class DataStream {
 	 */
 	public function readString() {
 		$length = $this->readShort();
-		return $this->read($length);
+	  return $this->read($length);
 	}
 
 	/**
@@ -128,7 +134,7 @@ class DataStream {
 	 * @return int
 	 */
 	public function readTimestamp() {
-		return round($this->readInt() * 4294967.296 + ($this->readInt() / 1000));
+		return (integer) round($this->readInt() * 4294967.296 + ($this->readInt() / 1000));
 	}
 
 	/**
@@ -140,12 +146,22 @@ class DataStream {
 	public function readList($valueType) {
 		$list = array();
 		$count = $this->readShort();
+		
+		echo "readList(0x".dechex($valueType['type']).") elements=$count\n";
+		
+		file_put_contents("/tmp/x",$this->data);
+		
 		for ($i = 0; $i < $count; ++$i) {
-			$list[] = $this->readByType($valueType);
+		  $list[] = $this->readCollectionElementByType($valueType);
 		}
 		return $list;
 	}
 
+	public function readText() {
+    return $this->readString();
+	}
+
+	
 	/**
 	 * Read map.
 	 *
@@ -156,8 +172,11 @@ class DataStream {
 	public function readMap($keyType, $valueType) {
 		$map = array();
 		$count = $this->readShort();
+
 		for ($i = 0; $i < $count; ++$i) {
-			$map[$this->readByType($keyType)] = $this->readByType($valueType);
+		  $key = $this->readCollectionElementByType($keyType);
+		  $val = $this->readCollectionElementByType($valueType);
+		  $map[$key] = $val;
 		}
 		return $map;
 	}
@@ -186,6 +205,11 @@ class DataStream {
 	 * @return bool
 	 */
 	public function readBoolean() {
+	  // null fix
+	  if($this->length == 0) {
+	    return false;
+	  }
+	  
 		return (bool)$this->readChar();
 	}
 
@@ -225,9 +249,13 @@ class DataStream {
 	 * @return mixed
 	 */
 	public function readByType(array $type) {
+	  if($this->length == 0) {
+	    return $this->defaultByType($type);
+	  }
+
 		switch ($type['type']) {
-			case DataTypeEnum::ASCII:
-			case DataTypeEnum::VARCHAR:
+		  case DataTypeEnum::VARCHAR:
+		  case DataTypeEnum::ASCII:
 			case DataTypeEnum::TEXT:
 				return $this->data;
 			case DataTypeEnum::BIGINT:
@@ -265,4 +293,101 @@ class DataStream {
 		trigger_error('Unknown type ' . var_export($type, true));
 		return null;
 	}
+	
+	public function readCollectionElementByType(array $type) {
+	  if($this->length == 0) {
+	    return $this->defaultByType($type);
+	  }
+
+	  switch ($type['type']) {
+	    case DataTypeEnum::VARCHAR:
+	    case DataTypeEnum::ASCII:
+	    case DataTypeEnum::TEXT:
+	      return $this->readString();
+	    case DataTypeEnum::BIGINT:
+	    case DataTypeEnum::COUNTER:
+	    case DataTypeEnum::VARINT:
+	      return $this->readVarint();
+	    case DataTypeEnum::CUSTOM:
+	    case DataTypeEnum::BLOB:
+	      return $this->readBytes();
+	    case DataTypeEnum::BOOLEAN:
+	      return $this->readBoolean();
+	    case DataTypeEnum::DECIMAL:
+	      return $this->readDecimal();
+	    case DataTypeEnum::DOUBLE:
+	      return $this->readDouble();
+	    case DataTypeEnum::FLOAT:
+	      return $this->readFloat();
+	    case DataTypeEnum::INT:
+	      return $this->readInt($this->readShort());
+	    case DataTypeEnum::TIMESTAMP:
+	      return $this->readTimestamp();
+	    case DataTypeEnum::UUID:
+	      $this->readShort(); // skip length
+	      return $this->readUuid();
+	    case DataTypeEnum::TIMEUUID:
+	      $this->readShort(); // skip length
+	      return $this->readUuid();
+	    case DataTypeEnum::INET:
+	      return $this->readInet();
+	    case DataTypeEnum::COLLECTION_LIST:
+	    case DataTypeEnum::COLLECTION_SET:
+	      return $this->readList($type['value']);
+	    case DataTypeEnum::COLLECTION_MAP:
+	      return $this->readMap($type['key'], $type['value']);
+	  }
+	
+	  trigger_error('Unknown type ' . var_export($type, true));
+	  return null;
+	}
+	
+	
+	/**
+	 * TODO: ausdiskitieren
+	 * @param array $type
+	 * @return string|number|NULL|boolean
+	 */
+	public function defaultByType(array $type) {
+	  switch ($type['type']) {
+	    case DataTypeEnum::VARCHAR:
+	    case DataTypeEnum::ASCII:
+	    case DataTypeEnum::TEXT:
+	      return "";
+	    case DataTypeEnum::BIGINT:
+	    case DataTypeEnum::COUNTER:
+	    case DataTypeEnum::VARINT:
+	      return 0;
+	    case DataTypeEnum::CUSTOM:
+	    case DataTypeEnum::BLOB:
+	      return null;
+	    case DataTypeEnum::BOOLEAN:
+	      return false;
+	    case DataTypeEnum::DECIMAL:
+	      return null;
+	    case DataTypeEnum::DOUBLE:
+	      return null;
+	    case DataTypeEnum::FLOAT:
+	      return null;
+	    case DataTypeEnum::INT:
+	      return null;
+	    case DataTypeEnum::TIMESTAMP:
+	      return 0;
+	    case DataTypeEnum::UUID:
+	      return null;
+	    case DataTypeEnum::TIMEUUID:
+	      return null;
+	    case DataTypeEnum::INET:
+	      return null;
+	    case DataTypeEnum::COLLECTION_LIST:
+	    case DataTypeEnum::COLLECTION_SET:
+	      return null;
+	    case DataTypeEnum::COLLECTION_MAP:
+	      return null;
+	  }
+	
+	  trigger_error('Unknown type ' . var_export($type, true));
+	  return null;
+	}
+	
 }
